@@ -1,0 +1,14 @@
+{
+  "functions": {
+    "api/detect.js": {
+      "maxDuration": 30,
+      "memory": 3008
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
