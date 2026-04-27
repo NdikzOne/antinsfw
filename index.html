@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSFW Detector API Demo</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        h1 { text-align: center; color: #333; margin-top: 0; }
+        .upload-area { border: 2px dashed #ccc; border-radius: 16px; padding: 40px; text-align: center; margin: 20px 0; cursor: pointer; transition: all 0.3s; background: #f9f9f9; }
+        .upload-area:hover { border-color: #667eea; background: #f0f0ff; }
+        #preview { max-width: 100%; max-height: 300px; display: block; margin: 20px auto; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .result-safe { background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); color: #155724; padding: 20px; border-radius: 16px; text-align: center; font-weight: bold; font-size: 24px; margin: 20px 0; }
+        .result-nsfw { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: #721c24; padding: 20px; border-radius: 16px; text-align: center; font-weight: bold; font-size: 24px; margin: 20px 0; }
+        .details { margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 16px; }
+        .bar { background: #e0e0e0; border-radius: 10px; margin: 10px 0; overflow: hidden; }
+        .bar-fill { padding: 8px 12px; text-align: right; font-size: 12px; border-radius: 10px; transition: width 0.3s; color: white; font-weight: bold; }
+        button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 24px; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: bold; margin: 10px 0; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .status { padding: 12px; border-radius: 10px; margin: 10px 0; text-align: center; }
+        .loading { background: #fff3cd; color: #856404; }
+        .api-url { background: #e7f3ff; padding: 15px; border-radius: 12px; margin: 20px 0; font-family: monospace; font-size: 12px; word-break: break-all; }
+        input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 10px; margin: 10px 0; font-family: monospace; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>🔍 NSFW Detector API Demo</h1>
+    
+    <div class="api-url">
+        <strong>🌐 API Endpoint:</strong><br>
+        <input type="text" id="apiUrl" placeholder="https://your-app.vercel.app/api/detect" value="https://nsfw-detector-api.vercel.app/api/detect">
+        <small style="display: block; margin-top: 5px;">Ganti dengan URL Vercel Anda</small>
+    </div>
+    
+    <div class="upload-area" id="dropArea">
+        📁 Klik atau drag & drop gambar di sini<br>
+        <small>Support: JPG, PNG, GIF, WebP (Max 10MB)</small>
+    </div>
+    
+    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+    <img id="preview" style="display: none;">
+    
+    <div id="status" class="status"></div>
+    <div id="result"></div>
+</div>
+
+<script>
+    const dropArea = document.getElementById('dropArea');
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const resultDiv = document.getElementById('result');
+    const statusDiv = document.getElementById('status');
+    const apiUrlInput = document.getElementById('apiUrl');
+    
+    async function detectWithAPI(file) {
+        const apiUrl = apiUrlInput.value.trim();
+        if (!apiUrl) {
+            statusDiv.innerHTML = '❌ Masukkan API URL terlebih dahulu!';
+            return;
+        }
+        
+        statusDiv.innerHTML = '<div class="loading">🔄 Mengirim ke API...</div>';
+        
+        const formData = new FormData();
+        formData.append('image', file);
+        
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Unknown error');
+            }
+            
+            // Display results
+            const resultClass = data.isNSFW ? 'result-nsfw' : 'result-safe';
+            const resultText = data.isNSFW ? '🔞 NSFW - Gambar Dewasa Terdeteksi!' : '✅ SAFE - Gambar Aman';
+            
+            resultDiv.innerHTML = `<div class="${resultClass}">${resultText}</div>`;
+            resultDiv.innerHTML += `<div class="details"><strong>📊 Detail Prediksi:</strong><br>`;
+            resultDiv.innerHTML += `<div>NSFW Score: <strong>${(data.nsfwScore * 100).toFixed(1)}%</strong></div>`;
+            
+            for (let p of data.predictions) {
+                let percent = (p.probability * 100).toFixed(1);
+                let color = ['Hentai', 'Porn', 'Sexy'].includes(p.className) ? '#dc3545' : '#28a745';
+                resultDiv.innerHTML += `
+                    <div style="margin-top: 10px;">${p.className}: ${percent}%</div>
+                    <div class="bar"><div class="bar-fill" style="width: ${percent}%; background: ${color};">${percent > 15 ? percent+'%' : ''}</div></div>
+                `;
+            }
+            resultDiv.innerHTML += `<div style="margin-top: 10px; font-size: 12px; color: #666;">🕐 ${new Date(data.timestamp).toLocaleString()}</div>`;
+            resultDiv.innerHTML += `</div>`;
+            
+            statusDiv.innerHTML = '✅ Deteksi selesai';
+            
+        } catch (error) {
+            console.error(error);
+            statusDiv.innerHTML = `<div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px;">❌ Error: ${error.message}. Pastikan API URL benar dan model sudah di-load.</div>`;
+        }
+    }
+    
+    function handleFile(file) {
+        if (!file || !file.type.startsWith('image/')) {
+            alert('Pilih file gambar!');
+            return;
+        }
+        
+        if (file.size > 10 * 1024 * 1024) {
+            alert('File terlalu besar! Maksimal 10MB');
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+            detectWithAPI(file);
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    dropArea.onclick = () => fileInput.click();
+    dropArea.ondragover = (e) => { e.preventDefault(); dropArea.style.borderColor = '#667eea'; };
+    dropArea.ondragleave = () => dropArea.style.borderColor = '#ccc';
+    dropArea.ondrop = (e) => { e.preventDefault(); dropArea.style.borderColor = '#ccc'; handleFile(e.dataTransfer.files[0]); };
+    fileInput.onchange = (e) => handleFile(e.target.files[0]);
+    
+    statusDiv.innerHTML = '📤 Upload gambar untuk deteksi';
+</script>
+</body>
+</html>
