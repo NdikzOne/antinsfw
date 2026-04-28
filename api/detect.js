@@ -1,10 +1,13 @@
-const { IncomingForm } = require('formidable');
-const tf = require('@tensorflow/tfjs-node');
-const sharp = require('sharp');
-const fs = require('fs');
-const path = require('path');
+import { IncomingForm } from 'formidable';
+import tf from '@tensorflow/tfjs-node';
+import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Matikan koneksi database opsional
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export const config = {
   api: {
     bodyParser: false,
@@ -14,7 +17,6 @@ export const config = {
 let model = null;
 let modelLoading = false;
 
-// Class names untuk NSFW
 const CLASS_NAMES = ['Drawing', 'Hentai', 'Neutral', 'Porn', 'Sexy'];
 
 async function loadModel() {
@@ -26,7 +28,7 @@ async function loadModel() {
 
   modelLoading = true;
   try {
-    const modelPath = path.join(process.cwd(), 'model', 'model.json');
+    const modelPath = path.join(__dirname, '..', 'model', 'model.json');
     console.log('Loading model from:', modelPath);
     
     model = await tf.loadLayersModel(`file://${modelPath}`);
@@ -41,27 +43,24 @@ async function loadModel() {
 }
 
 async function preprocessImage(buffer) {
-  // Resize ke 224x224 seperti yang diharapkan model
   const image = await sharp(buffer)
     .resize(224, 224, { fit: 'fill' })
     .removeAlpha()
     .raw()
     .toBuffer();
   
-  // Konversi ke tensor dan normalisasi
   let tensor = tf.tensor3d(new Uint8Array(image), [224, 224, 3]);
   tensor = tensor.toFloat();
-  tensor = tensor.div(255.0); // Normalize ke [0,1]
-  tensor = tensor.expandDims(0); // Tambah batch dimension
+  tensor = tensor.div(255.0);
+  tensor = tensor.expandDims(0);
   
   return tensor;
 }
 
-// Fungsi untuk parsing multipart/form-data dengan formidable
 async function parseForm(req) {
   const form = new IncomingForm({
     keepExtensions: true,
-    maxFileSize: 10 * 1024 * 1024, // 10MB
+    maxFileSize: 10 * 1024 * 1024,
   });
   
   return new Promise((resolve, reject) => {
@@ -72,7 +71,7 @@ async function parseForm(req) {
   });
 }
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -87,51 +86,36 @@ module.exports = async (req, res) => {
   }
   
   try {
-    // Load model
     const nsfwModel = await loadModel();
-    
-    // Parse form data
     const { files } = await parseForm(req);
     
-    // Ambil file yang diupload
     let imageFile = files.image || files.file;
     if (!imageFile) {
       return res.status(400).json({ error: 'No image file provided. Use field name "image" or "file"' });
     }
     
-    // Jika array, ambil yang pertama
     if (Array.isArray(imageFile)) imageFile = imageFile[0];
     
-    // Baca file buffer
     const buffer = fs.readFileSync(imageFile.filepath);
-    
-    // Hapus file temporary
     fs.unlinkSync(imageFile.filepath);
     
-    // Preprocess image
     const tensor = await preprocessImage(buffer);
-    
-    // Run inference
     const predictions = await nsfwModel.predict(tensor).data();
     tensor.dispose();
     
-    // Format hasil
     const results = CLASS_NAMES.map((name, index) => ({
       className: name,
       probability: parseFloat(predictions[index].toFixed(4))
     }));
     
-    // Sort by probability descending
     results.sort((a, b) => b.probability - a.probability);
     
-    // Hitung NSFW score (Hentai + Porn + Sexy)
     const nsfwScore = results
       .filter(r => ['Hentai', 'Porn', 'Sexy'].includes(r.className))
       .reduce((sum, r) => sum + r.probability, 0);
     
     const isNSFW = nsfwScore > 0.5;
     
-    // Response
     return res.status(200).json({
       success: true,
       prediction: isNSFW ? 'NSFW' : 'SAFE',
@@ -148,4 +132,4 @@ module.exports = async (req, res) => {
       error: error.message
     });
   }
-};
+}
