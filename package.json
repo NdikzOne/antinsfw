@@ -1,7 +1,7 @@
 {
   "name": "antinsfw",
   "version": "1.0.0",
-  "description": "NSFW Detection API",
+  "description": "NSFW Detection API - Lightweight",
   "type": "module",
   "scripts": {
     "dev": "node api/detect.js"
@@ -10,5 +10,8 @@
     "@tensorflow/tfjs-node": "^4.15.0",
     "nsfwjs": "^3.0.0",
     "formidable": "^3.5.1"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
