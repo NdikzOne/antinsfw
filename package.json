@@ -1,17 +1,14 @@
 {
-  "name": "antinsfw",
+  "name": "nsfw-api",
   "version": "1.0.0",
-  "description": "NSFW Detection API - Lightweight",
-  "type": "module",
+  "description": "NSFW Detection API",
+  "main": "api/detect.js",
   "scripts": {
-    "dev": "node api/detect.js"
+    "start": "node api/detect.js"
   },
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.15.0",
-    "nsfwjs": "^3.0.0",
-    "formidable": "^3.5.1"
-  },
-  "engines": {
-    "node": "20.x"
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.33.0"
   }
 }
