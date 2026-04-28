@@ -10,9 +10,10 @@
     "@tensorflow/tfjs-node": "^4.15.0",
     "nsfwjs": "^3.0.0",
     "node-fetch": "^2.7.0",
-    "busboy": "^1.6.0"
+    "busboy": "^1.6.0",
+    "formidable": "^3.5.0"
   },
   "engines": {
-    "node": "18.x"
+    "node": "20.x"
   }
 }
