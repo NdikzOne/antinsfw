@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "name": "nsfw-api",
   "version": "1.0.0",
   "description": "NSFW Detection API",
