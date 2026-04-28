@@ -1,67 +1,46 @@
-const nsfw = require('nsfwjs');
-const tf = require('@tensorflow/tfjs-node');
-const sharp = require('sharp');
-const multer = require('multer');
-
-// Disable tf logging
-tf.enableProdMode();
+import * as tf from '@tensorflow/tfjs-node';
+import nsfwjs from 'nsfwjs';
+import { IncomingForm } from 'formidable';
+import fetch from 'node-fetch';
+import { createReadStream } from 'fs';
+import { unlink } from 'fs/promises';
 
 let model = null;
 
-// Load model on startup
 async function loadModel() {
   if (!model) {
-    console.log('Loading NSFW model...');
-    // Use local model or from CDN
-    model = await nsfw.load('file://model/', {
-      size: 224,
+    // Menggunakan model dari CDN
+    model = await nsfwjs.load('https://cdn.jsdelivr.net/gh/infinitered/nsfwjs@master/models/mobilenet_v2/', {
+      size: 299,
       type: 'graph'
     });
-    console.log('Model loaded successfully');
   }
   return model;
 }
 
-// Configure multer for memory storage
-const upload = multer({ 
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
-});
-
-// Helper function to process image
-async function processImage(buffer) {
-  try {
-    // Resize image to 224x224 using sharp
-    const image = await sharp(buffer)
-      .resize(224, 224, { fit: 'cover' })
-      .toBuffer();
-    
-    // Convert to tensor
-    const decoded = tf.node.decodeImage(image, 3);
-    const tensor = decoded.expandDims(0);
-    
-    return tensor;
-  } catch (error) {
-    console.error('Image processing error:', error);
-    throw new Error('Failed to process image');
-  }
-}
-
+// Disable body parser untuk handle file upload
 export const config = {
   api: {
     bodyParser: false,
-    externalResolver: true,
   },
 };
 
 export default async function handler(req, res) {
-  // Enable CORS
+  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      status: 'online',
+      message: 'NSFW Detector API',
+      usage: 'POST /api/detect with multipart/form-data (field: image)'
+    });
   }
 
   if (req.method !== 'POST') {
@@ -69,56 +48,77 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Load model
-    await loadModel();
+    // Parse form data
+    const form = new IncomingForm({
+      keepExtensions: true,
+      maxFileSize: 10 * 1024 * 1024, // 10MB
+    });
 
-    // Handle file upload
-    await new Promise((resolve, reject) => {
-      upload.single('image')(req, res, (err) => {
+    const [fields, files] = await new Promise((resolve, reject) => {
+      form.parse(req, (err, fields, files) => {
         if (err) reject(err);
-        else resolve();
+        resolve([fields, files]);
       });
     });
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image provided' });
+    let fileBuffer = null;
+    let filePath = null;
+
+    // Handle file dari upload
+    if (files.image && files.image[0]) {
+      filePath = files.image[0].filepath;
+      const fs = await import('fs');
+      fileBuffer = await fs.promises.readFile(filePath);
+      await unlink(filePath); // Hapus temporary file
+    } 
+    // Handle URL image
+    else if (fields.url && fields.url[0]) {
+      const response = await fetch(fields.url[0]);
+      fileBuffer = await response.buffer();
+    }
+    else {
+      return res.status(400).json({ error: 'No image provided. Send file (image) or url' });
     }
 
-    // Process image
-    const tensor = await processImage(req.file.buffer);
+    // Load model
+    const nsfwModel = await loadModel();
+
+    // Decode image ke tensor
+    const imageTensor = tf.node.decodeImage(fileBuffer, 3);
     
-    // Classify
-    const predictions = await model.classify(tensor);
+    // Resize ke ukuran yang diharapkan model (299x299)
+    const resized = tf.image.resizeBilinear(imageTensor, [299, 299]);
     
-    // Clean up tensor
-    tensor.dispose();
+    // Detect
+    const predictions = await nsfwModel.classify(resized);
     
-    // Calculate NSFW score
+    // Cleanup
+    imageTensor.dispose();
+    resized.dispose();
+
     const nsfwScore = predictions
       .filter(p => ['Hentai', 'Porn', 'Sexy'].includes(p.className))
       .reduce((sum, p) => sum + p.probability, 0);
     
     const isNSFW = nsfwScore > 0.5;
-    
-    // Format response
-    const response = {
-      success: true,
-      isNSFW,
-      nsfwScore: parseFloat(nsfwScore.toFixed(4)),
+
+    res.status(200).json({
+      safe: !isNSFW,
+      nsfw: isNSFW,
+      score: nsfwScore,
       predictions: predictions.map(p => ({
         className: p.className,
-        probability: parseFloat(p.probability.toFixed(4))
+        probability: Number(p.probability.toFixed(4)),
+        percentage: `${(p.probability * 100).toFixed(2)}%`
       })),
       timestamp: new Date().toISOString()
-    };
-    
-    res.status(200).json(response);
-    
+    });
+
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message || 'Internal server error' 
+    console.error('Detection error:', error);
+    res.status(500).json({
+      error: 'Detection failed',
+      message: error.message
     });
   }
 }
