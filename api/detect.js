@@ -1,39 +1,39 @@
-import * as tf from '@tensorflow/tfjs-node';
+import * as tf from '@tensorflow/tfjs';
 import nsfwjs from 'nsfwjs';
-import formidable from 'formidable';
 import { readFile, unlink } from 'fs/promises';
+import formidable from 'formidable';
 
-let model = null;
+// JANGAN simpan model di function, load dari CDN setiap request
+// Atau cache di memory global (masih dalam batas)
 
-async function loadModel() {
-  if (!model) {
-    console.log('Loading NSFW model...');
-    model = await nsfwjs.load('https://cdn.jsdelivr.net/gh/infinitered/nsfwjs@master/models/mobilenet_v2/');
-    console.log('Model loaded!');
+let modelPromise = null;
+
+async function getModel() {
+  if (!modelPromise) {
+    console.log('Loading NSFW model from CDN...');
+    // Load dari CDN - tidak perlu model di bundle
+    modelPromise = nsfwjs.load('https://cdn.jsdelivr.net/gh/infinitered/nsfwjs@master/models/');
   }
-  return model;
+  return modelPromise;
 }
 
 export const config = {
   api: {
     bodyParser: false,
+    maxDuration: 10, // Maksimal 10 detik
   },
 };
 
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
   
   if (req.method === 'GET') {
     return res.status(200).json({ 
-      status: 'online', 
-      message: 'NSFW Detector API is running',
-      endpoint: 'POST /api/detect'
+      status: 'online',
+      note: 'NSFW Detector API (lightweight mode)'
     });
   }
   
@@ -42,11 +42,7 @@ export default async function handler(req, res) {
   }
   
   try {
-    const form = formidable({
-      maxFileSize: 10 * 1024 * 1024,
-      allowEmptyFiles: false,
-    });
-    
+    const form = formidable({ maxFileSize: 5 * 1024 * 1024 });
     const [fields, files] = await new Promise((resolve, reject) => {
       form.parse(req, (err, fields, files) => {
         if (err) reject(err);
@@ -56,28 +52,25 @@ export default async function handler(req, res) {
     
     let imageBuffer;
     
-    // Cek apakah ada file upload
     if (files.image && files.image[0]) {
       const filePath = files.image[0].filepath;
       imageBuffer = await readFile(filePath);
       await unlink(filePath).catch(() => {});
-    }
-    // Cek apakah ada URL
-    else if (fields.url && fields.url[0]) {
+    } else if (fields.url && fields.url[0]) {
       const response = await fetch(fields.url[0]);
       imageBuffer = Buffer.from(await response.arrayBuffer());
-    }
-    else {
+    } else {
       return res.status(400).json({ error: 'No image provided' });
     }
     
-    // Load model & detect
-    const nsfwModel = await loadModel();
+    // Load model (dari CDN, tidak disimpan di function)
+    const model = await getModel();
+    
+    // Decode image
     const imageTensor = tf.node.decodeImage(imageBuffer, 3);
     const resized = tf.image.resizeBilinear(imageTensor, [224, 224]);
-    const predictions = await nsfwModel.classify(resized);
+    const predictions = await model.classify(resized);
     
-    // Cleanup
     imageTensor.dispose();
     resized.dispose();
     
@@ -99,9 +92,6 @@ export default async function handler(req, res) {
     
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 }
