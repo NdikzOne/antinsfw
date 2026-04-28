@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NSFW Detector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: system-ui; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .upload { border: 2px dashed #ccc; border-radius: 10px; padding: 40px; text-align: center; margin: 20px 0; }
+        button { background: #0070f3; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+        .safe { background: #d4edda; color: #155724; padding: 15px; border-radius: 8px; }
+        .nsfw { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 8px; }
+        pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 NSFW Detector</h1>
+    
+    <div class="upload">
+        <input type="file" id="fileInput" accept="image/*">
+        <br><br>
+        <input type="text" id="urlInput" placeholder="Atau masukkan URL gambar" style="width: 80%; padding: 8px;">
+        <br><br>
+        <button onclick="detect()">Detect</button>
+    </div>
+    
+    <div id="result"></div>
+    
+    <script>
+        async function detect() {
+            const file = document.getElementById('fileInput').files[0];
+            const url = document.getElementById('urlInput').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!file && !url) {
+                alert('Pilih file atau masukkan URL');
+                return;
+            }
+            
+            resultDiv.innerHTML = '<p>⏳ Detecting...</p>';
+            
+            const formData = new FormData();
+            if (file) formData.append('image', file);
+            if (url) formData.append('url', url);
+            
+            try {
+                const res = await fetch('/api/detect', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if (data.error) throw new Error(data.error);
+                
+                resultDiv.innerHTML = `
+                    <div class="${data.nsfw ? 'nsfw' : 'safe'}">
+                        <strong>${data.nsfw ? '🔞 NSFW DETECTED' : '✅ SAFE'}</strong>
+                        <p>NSFW Score: ${(data.nsfwScore * 100).toFixed(2)}%</p>
+                    </div>
+                    <h3>Details:</h3>
+                    <pre>${JSON.stringify(data.predictions, null, 2)}</pre>
+                `;
+            } catch (err) {
+                resultDiv.innerHTML = `<div class="nsfw">Error: ${err.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
