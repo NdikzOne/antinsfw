@@ -2,72 +2,117 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>NSFW Detector API Demo</title>
+    <title>NSFW API Tester</title>
     <style>
         body { font-family: Arial; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { background: #f5f5f5; border-radius: 10px; padding: 20px; }
         .upload-area { border: 2px dashed #ccc; border-radius: 10px; padding: 40px; text-align: center; cursor: pointer; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+        #preview { max-width: 100%; max-height: 300px; margin: 20px auto; display: block; }
         .safe { background: #d4edda; color: #155724; padding: 15px; border-radius: 8px; }
         .nsfw { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 8px; }
-        pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+        .bar { background: #e0e0e0; border-radius: 5px; margin: 5px 0; overflow: hidden; }
+        .bar-fill { padding: 3px 8px; text-align: right; font-size: 12px; border-radius: 5px; }
+        .api-url { margin: 20px 0; padding: 10px; background: #e9ecef; border-radius: 5px; font-family: monospace; }
     </style>
 </head>
 <body>
-    <h1>🔍 NSFW Detector API</h1>
-    <p>API Endpoint: <code>POST /api/detect</code></p>
-    
-    <div class="upload-area" id="dropArea">
-        📁 Upload gambar atau masukkan URL<br>
-        <input type="file" id="fileInput" accept="image/*" style="margin: 10px;">
-        <input type="text" id="urlInput" placeholder="Atau masukkan URL gambar" style="width: 80%; padding: 8px; margin: 10px;">
-        <button id="detectBtn">🔍 Detect</button>
+<div class="container">
+    <h1>🔍 NSFW API Tester</h1>
+    <div class="api-url">
+        📍 API Endpoint: <strong id="apiUrl">Loading...</strong>
     </div>
     
+    <div class="upload-area" id="dropArea">
+        📁 Klik atau drag & drop gambar<br>
+        <small>Support: JPG, PNG, GIF, WebP (Max 10MB)</small>
+    </div>
+    
+    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+    <img id="preview" style="display: none;">
+    
+    <div id="status" class="status" style="margin: 10px 0; color: #666;"></div>
     <div id="result"></div>
+</div>
 
-    <script>
-        const API_URL = '/api/detect';
+<script>
+    const API_URL = '/api/detect'; // Sesuaikan dengan URL Vercel Anda
+    const dropArea = document.getElementById('dropArea');
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const resultDiv = document.getElementById('result');
+    const statusDiv = document.getElementById('status');
+    
+    document.getElementById('apiUrl').innerText = window.location.origin + API_URL;
+    
+    async function detectImage(file) {
+        const formData = new FormData();
+        formData.append('image', file);
         
-        async function detect(file, url) {
-            const formData = new FormData();
-            if (file) formData.append('image', file);
-            if (url) formData.append('url', url);
+        statusDiv.innerHTML = '🔍 Mendeteksi...';
+        resultDiv.innerHTML = '';
+        
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                body: formData
+            });
             
-            document.getElementById('result').innerHTML = '<p>⏳ Detecting...</p>';
+            const data = await response.json();
             
-            try {
-                const response = await fetch(API_URL, { method: 'POST', body: formData });
-                const data = await response.json();
-                
-                if (!response.ok) throw new Error(data.error || 'Error');
-                
-                const resultDiv = document.getElementById('result');
-                resultDiv.innerHTML = `
-                    <div class="${data.nsfw ? 'nsfw' : 'safe'}">
-                        <strong>${data.nsfw ? '🔞 NSFW' : '✅ SAFE'}</strong>
-                        <p>Score: ${(data.score * 100).toFixed(2)}%</p>
-                    </div>
-                    <h3>Detail Predictions:</h3>
-                    <pre>${JSON.stringify(data.predictions, null, 2)}</pre>
-                `;
-            } catch (error) {
-                document.getElementById('result').innerHTML = `<div class="nsfw">❌ Error: ${error.message}</div>`;
+            if (!data.success) {
+                throw new Error(data.error);
             }
+            
+            const isNsfw = data.prediction === 'NSFW';
+            resultDiv.innerHTML = `<div class="${isNsfw ? 'nsfw' : 'safe'}">
+                <strong>${isNsfw ? '🔞 NSFW' : '✅ SAFE'}</strong><br>
+                Confidence: ${(data.confidence * 100).toFixed(1)}%
+            </div>`;
+            
+            resultDiv.innerHTML += `<div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                <strong>Detail Prediksi:</strong>`;
+            
+            for (let p of data.details) {
+                let percent = (p.probability * 100).toFixed(1);
+                let color = ['Hentai', 'Porn', 'Sexy'].includes(p.className) ? '#dc3545' : '#007bff';
+                resultDiv.innerHTML += `
+                    <div>${p.className}: ${percent}%</div>
+                    <div class="bar"><div class="bar-fill" style="width: ${percent}%; background: ${color};">${percent > 15 ? percent+'%' : ''}</div></div>
+                `;
+            }
+            resultDiv.innerHTML += `</div>`;
+            
+            statusDiv.innerHTML = '✅ Selesai';
+        } catch (error) {
+            console.error(error);
+            statusDiv.innerHTML = '❌ Error: ' + error.message;
+            resultDiv.innerHTML = `<div class="nsfw">Error: ${error.message}</div>`;
+        }
+    }
+    
+    function handleFile(file) {
+        if (!file || !file.type.startsWith('image/')) {
+            alert('Pilih file gambar!');
+            return;
         }
         
-        document.getElementById('detectBtn').onclick = () => {
-            const file = document.getElementById('fileInput').files[0];
-            const url = document.getElementById('urlInput').value;
-            if (file) detect(file, null);
-            else if (url) detect(null, url);
-            else alert('Pilih file atau masukkan URL');
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+            detectImage(file);
         };
-        
-        document.getElementById('dropArea').ondragover = e => e.preventDefault();
-        document.getElementById('dropArea').ondrop = e => {
-            e.preventDefault();
-            detect(e.dataTransfer.files[0], null);
-        };
-    </script>
+        reader.readAsDataURL(file);
+    }
+    
+    dropArea.onclick = () => fileInput.click();
+    dropArea.ondragover = (e) => { e.preventDefault(); dropArea.style.borderColor = '#007bff'; };
+    dropArea.ondragleave = () => dropArea.style.borderColor = '#ccc';
+    dropArea.ondrop = (e) => { e.preventDefault(); dropArea.style.borderColor = '#ccc'; handleFile(e.dataTransfer.files[0]); };
+    fileInput.onchange = (e) => handleFile(e.target.files[0]);
+    
+    statusDiv.innerHTML = '📤 Upload gambar untuk deteksi';
+</script>
 </body>
 </html>
