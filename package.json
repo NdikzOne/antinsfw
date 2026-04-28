@@ -1,16 +1,16 @@
 {
   "name": "nsfw-detector-api",
   "version": "1.0.0",
-  "description": "NSFW Image Detection API",
+  "description": "NSFW Detection API with NSFWJS",
   "main": "api/detect.js",
   "scripts": {
-    "start": "vercel dev"
+    "start": "node api/detect.js"
   },
   "dependencies": {
     "@tensorflow/tfjs-node": "^4.15.0",
     "nsfwjs": "^3.0.0",
-    "sharp": "^0.33.1",
-    "multer": "^1.4.5-lts.1"
+    "node-fetch": "^2.7.0",
+    "busboy": "^1.6.0"
   },
   "engines": {
     "node": "18.x"
